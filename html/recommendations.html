@@ -1,0 +1,750 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>recommendations</title><meta name="generator" content="MATLAB 7.13"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2012-12-13"><meta name="DC.source" content="recommendations.m"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head><body><div class="content"><h2>Contents</h2><div><ul><li><a href="#1">"Programming Collective Intelligence - Building Smart Web 2.0 Applications"</a></li><li><a href="#2">Create the movie review dataset</a></li><li><a href="#3">Recommendation as an optimization problem</a></li><li><a href="#4">Predicting ratings - Content-based approach</a></li><li><a href="#5">Feature learning</a></li><li><a href="#6">Learning the parameters - the optimization approach</a></li><li><a href="#7">Using the learned model to make predictions</a></li><li><a href="#8">Finding similar users</a></li><li><a href="#9">Finding similar movies</a></li><li><a href="#10">Closing</a></li><li><a href="#11">Using the MovieLens Dataset  - Run the learning algorithm</a></li></ul></div><h2>"Programming Collective Intelligence - Building Smart Web 2.0 Applications"<a name="1"></a></h2><p>by Toby Segaran (O'Reilly Media, ISBN-10: 0-596-52932-5)</p><p>When Stanford University initially offered two online courses which later turned into Coursera and Udacity, I took Machine Learning class by Andrew Ng, It was an excellent class, one of the best I ever took.</p><p>The class also included a module on Collaborative Filtering, and interestingly it used a very different approach from the Segaran's, and it took direct advantage of matrix computational capabilities because the class was taught in Octave.</p><p>In this example, I am using fminunc function from Optimization toolbox rather than fmincg fuction that Andew Ng used.</p><pre class="codeinput"><span class="comment">% Initialization</span>
+clear <span class="string">all</span>; clc ; close <span class="string">all</span>;
+</pre><h2>Create the movie review dataset<a name="2"></a></h2><p>I will use the same example used in the original book.</p><pre class="codeinput"><span class="comment">% There are 7 movie critics:</span>
+<span class="comment">% 'Lisa Rose', 'Gene Seymour', 'Michael Phillips', ...</span>
+<span class="comment">%    'Claudia Puig', 'Mick LaSalle', 'Jack Matthiews', 'Toby'</span>
+critics = {<span class="string">'Lisa'</span>, <span class="string">'Gene'</span>, <span class="string">'Michael'</span>, <span class="keyword">...</span>
+   <span class="string">'Claudia'</span>, <span class="string">'Mick'</span>, <span class="string">'Jack'</span>, <span class="string">'Toby'</span>}';
+
+<span class="comment">% There are 6 movies:</span>
+<span class="comment">% 'Lady in the Water', 'Snakes on a Plane', 'Just My Luck',...</span>
+<span class="comment">%    'Superman Returns', 'The Night Listener', 'You, Me and Dupree'</span>
+movies = {<span class="string">'Lady'</span>, <span class="string">'Snakes'</span>, <span class="string">'JustMyLuck'</span>,<span class="keyword">...</span>
+   <span class="string">'Superman'</span>, <span class="string">'NightListener'</span>, <span class="string">'Dupree'</span>}';
+
+<span class="comment">% Data is a matrix of ratings by those  movies (row) x critics (col)</span>
+Y = <span class="keyword">...</span>
+[2.5 3.0 2.5 0   3.0 3.0 0  ; <span class="keyword">...</span>
+ 3.5 3.5 3.0 3.5 4.0 4.0 4.5; <span class="keyword">...</span>
+ 3.0 1.5 0   3.0 2.0 0   0  ; <span class="keyword">...</span>
+ 3.5 5.0 3.5 4.0 3.0 5.0 4.0; <span class="keyword">...</span>
+ 3.0 3.0 4.0 4.5 3.0 3.0 0  ; <span class="keyword">...</span>
+ 2.5 3.5 0   2.5 2.0 3.5 1 ];
+
+disp(<span class="string">'Sample data has been loaded into Workspace.'</span>)
+reviews = dataset({Y,critics{:}},<span class="string">'ObsNames'</span>,movies)
+
+<span class="comment">% In this dataset, the ratings range between 1 to 5 and 0 indicates no</span>
+<span class="comment">% rating. I need a new matrix R which is a logical array that returns 1</span>
+<span class="comment">% if a given movie is rated by a given user or 0 if not.</span>
+R = Y &gt; 0;
+
+<span class="comment">% This is needed to filter out unrated movies so that we can calculate an</span>
+<span class="comment">% average, for example.</span>
+fprintf(<span class="string">'Average rating for ''Lady in the Water'': %.1f out of 5\n\n'</span>, <span class="keyword">...</span>
+    mean(Y(1, R(1, :))));
+
+clear <span class="string">reviews</span>
+</pre><pre class="codeoutput">Sample data has been loaded into Workspace.
+
+reviews = 
+
+                     Lisa    Gene    Michael    Claudia    Mick    Jack    Toby
+    Lady             2.5       3     2.5          0        3         3       0 
+    Snakes           3.5     3.5       3        3.5        4         4     4.5 
+    JustMyLuck         3     1.5       0          3        2         0       0 
+    Superman         3.5       5     3.5          4        3         5       4 
+    NightListener      3       3       4        4.5        3         3       0 
+    Dupree           2.5     3.5       0        2.5        2       3.5       1 
+
+Average rating for 'Lady in the Water': 2.8 out of 5
+
+</pre><h2>Recommendation as an optimization problem<a name="3"></a></h2><p>Toby Segaran's approach in the book was to use Euclidean distance or Pearson coefficient to calculate similarity scores.</p><p>Andrew Ng's approach turns this into an optimization problem. You need to come up with a model with an arbitrary parameters to preduct a user's rating for a give movie. Then compare the predicted ratings with the actual ratings and tune the parameters until you minimize the prediction errors.</p><h2>Predicting ratings - Content-based approach<a name="4"></a></h2><p>Let's assume we can predict a user's rating for a movie if we know the past movie ratings and relevant attributes of those movies, such as romantic, action, etc. This is a linear regression:</p><p><tt>prediction = param0*attr0 + param1*attr1 + param2*attr2...</tt></p><p>where <b>attri0</b> = 1 and therefore <b>param0</b> is just a intercept term.</p><p>This arrangement makes it possible to group all parameters into matrix Theta and all attributes into matrix X. Then the lear regression is now simplified as:</p><p><tt>P = X*Theta'</tt></p><p>If we know the feature matrix X, then we can estimate the parameter matrix Theta by choosingthe value of Theta that minimize prediction errors.</p><pre class="codeinput"><span class="comment">% Create fake X and Theta with 3 features (attributes)</span>
+num_features = 3;
+num_movies = size(movies,1);
+num_users = size(critics,1);
+
+<span class="comment">% Randomly initialize Theta and X</span>
+disp(<span class="string">'Randomly generating X and Theta...'</span>);
+X = randn(num_movies,num_features);
+Theta = randn(num_users,num_features);
+
+<span class="comment">% Predict ratings and show the prediction errors</span>
+P = X*Theta';
+errors = (P-Y).*R; <span class="comment">% filter out unrated movies</span>
+
+disp(<span class="string">'Prediction errors from fake X and Theta.'</span>)
+prediction_errors = dataset({errors,critics{:}},<span class="string">'ObsNames'</span>,movies)
+
+clear <span class="string">P</span> <span class="string">errors</span> <span class="string">num_features</span> <span class="string">num_movies</span> <span class="string">num_users</span> <span class="string">prediction_errors</span> <span class="string">X</span> <span class="string">Theta</span>
+</pre><pre class="codeoutput">Randomly generating X and Theta...
+Prediction errors from fake X and Theta.
+
+prediction_errors = 
+
+                     Lisa       Gene       Michael    Claudia     Mick       Jack       Toby   
+    Lady             -1.5633    -1.5446    0.54245           0    -5.4793    -1.4283          0
+    Snakes           -4.1943    -4.9394    -4.7367      -2.592    -3.5105    -5.3444    -3.1088
+    JustMyLuck       -3.2926    -1.8022          0     -3.7037    -2.5704          0          0
+    Superman         -4.4439    -5.0242    -8.1397    -0.93509     1.7589    -6.3188    -2.0686
+    NightListener     -2.317     -1.015    -3.3992     -2.1992    0.46902    -1.1307          0
+    Dupree           -1.9561    -2.0392          0     -2.2912    -1.0526    -2.2687    -2.1859
+
+</pre><h2>Feature learning<a name="5"></a></h2><p>The problem with the previous approach is that we need to know the values of X in order to estimate the values of Theta, but how do you get the values of X in the first place? You need to figure out the relevant attributes of the all the movies in advance.</p><p>You can also estimate the values of X if we know the values of Theta, but that means we need to know user preferences in advance. This is a chicken and egg problem.</p><p>The solution is to randomly initialize both X and Theta and derive through optimization the values of both matrix that together minimizes prediction errors.</p><pre class="codeinput"><span class="comment">% Normalize Ratings so that each movie has a rating of 0 on average, and</span>
+<span class="comment">% returns the mean rating in Ymean.</span>
+[Ynorm, Ymean] = normalizeRatings(Y, R);
+
+<span class="comment">% Set cost function parameters</span>
+num_users = size(Ynorm, 2);
+num_movies = size(Ynorm, 1);
+num_features = 3;
+lambda = 1; <span class="comment">% regularization parameter to control over/under fitting</span>
+
+<span class="comment">% Randomly initialize Theta and X again</span>
+disp(<span class="string">'Randomly generating X and Theta again...'</span>);
+X = randn(num_movies,num_features);
+Theta = randn(num_users,num_features);
+init_params = [X(:) ; Theta(:)]; <span class="comment">% roll X and Theta into one vector</span>
+
+<span class="comment">% Cost Function</span>
+J = cofiCostFunc(init_params, Ynorm, R, num_users, num_movies, <span class="keyword">...</span>
+                                  num_features, lambda);
+fprintf(<span class="string">'Cost at current X and Theta: %f \n\n'</span>, J);
+
+clear <span class="string">J</span>
+</pre><pre class="codeoutput">Randomly generating X and Theta again...
+Cost at current X and Theta: 81.386374 
+
+</pre><h2>Learning the parameters - the optimization approach<a name="6"></a></h2><p>Now that you have the cost function and initial parameters, you can feed them to a minimization solver fminunc:</p><pre class="codeinput"><span class="comment">% Set options for fminunc</span>
+options = optimset(<span class="string">'GradObj'</span>, <span class="string">'on'</span>, <span class="string">'MaxIter'</span>, 100);
+
+<span class="comment">% Run optimization</span>
+theta = fminunc(@(t)(cofiCostFunc(t, Ynorm, R, num_users, num_movies, <span class="keyword">...</span>
+                num_features, lambda)), <span class="keyword">...</span>
+                init_params, options);
+
+<span class="comment">% Unroll the returned theta back into X and Theta</span>
+X = reshape(theta(1:num_movies*num_features), num_movies, num_features);
+Theta = reshape(theta(num_movies*num_features+1:end), <span class="keyword">...</span>
+                num_users, num_features);
+
+disp(<span class="string">'Parameter learning completed.'</span>);
+
+<span class="comment">% Calling collaborative Filtering Cost Function</span>
+init_params = [X(:) ; Theta(:)];
+J = cofiCostFunc(init_params, Ynorm, R, num_users, num_movies, <span class="keyword">...</span>
+                                  num_features, lambda);
+fprintf(<span class="string">'Cost at optimized X and Theta: %f \n\n'</span>, J);
+
+clear <span class="string">J</span> <span class="string">init_params</span> <span class="string">lambda</span> <span class="string">num_features</span> <span class="string">options</span> <span class="string">theta</span>
+</pre><pre class="codeoutput">
+Local minimum possible.
+
+fminunc stopped because the final change in function value relative to 
+its initial value is less than the default value of the function tolerance.
+
+
+
+Parameter learning completed.
+Cost at optimized X and Theta: 13.956875 
+
+</pre><h2>Using the learned model to make predictions<a name="7"></a></h2><p>Now that we have optimized X and Theta, we can use them to predict ratings and give recommendations. As in the book, we come to the same recommendations for Toby. Your results may vary due to random initialization.</p><pre class="codeinput">P = X * Theta';              <span class="comment">% predicted ratings</span>
+P = bsxfun(@plus, P, Ymean); <span class="comment">% add back the mean to restore full ratings</span>
+
+<span class="comment">% Toby is at the end of critics vector</span>
+toby_predictions = min(P(:,end),5); <span class="comment">% don't give more than 5 starts</span>
+[~, idx] = sort(toby_predictions, <span class="string">'descend'</span>);
+
+disp(<span class="string">'Recommendations for Toby:'</span>);
+<span class="keyword">for</span> i=1:num_movies
+    j = idx(i);
+    <span class="keyword">if</span> R(j,end) == 0
+        fprintf(<span class="string">'Predicted rating %.1f for movie %s\n'</span>, <span class="keyword">...</span>
+            toby_predictions(j), movies{j});
+    <span class="keyword">end</span>
+<span class="keyword">end</span>
+
+disp(<span class="string">' '</span>);
+disp(<span class="string">'Results from the book:'</span>);
+disp(<span class="string">'#1 NightListener'</span>);
+disp(<span class="string">'#2 Lady'</span>);
+disp(<span class="string">'#3 JustMyLuck'</span>);
+disp(<span class="string">' '</span>);
+
+clear <span class="string">P</span> <span class="string">i</span> <span class="string">idx</span> <span class="string">j</span> <span class="string">toby_predictions</span>
+</pre><pre class="codeoutput">Recommendations for Toby:
+Predicted rating 2.3 for movie NightListener
+Predicted rating 2.2 for movie Lady
+Predicted rating 1.5 for movie JustMyLuck
+ 
+Results from the book:
+#1 NightListener
+#2 Lady
+#3 JustMyLuck
+ 
+</pre><h2>Finding similar users<a name="8"></a></h2><p>We can also use optmized Theta to compare among users and discover who have similar tastes to one another based on the learned preferences. In this case I use Euclidean distance to rank the users by similarity.</p><p>My results are very close but not exactly the same as those in the book. Your results may vary due to random initialization.</p><pre class="codeinput">similar_users = zeros(num_users);
+
+<span class="keyword">for</span> i=1:num_users
+    distances = bsxfun(@minus, Theta, Theta(i,:));
+    distances = sqrt(sum(distances.^2,2));
+    similar_users(i,:) = distances';
+<span class="keyword">end</span>
+
+<span class="comment">% Whose tastes are similar to Toby's?</span>
+[~, idx] = sort(similar_users(end,:));
+idx = idx(2:end);
+disp(<span class="string">'Users who share similar tastes with Toby:'</span>);
+<span class="keyword">for</span> j = 1:size(idx,2)
+    k = idx(j);
+    fprintf(<span class="string">'Distance %.1f for user %s\n'</span>, <span class="keyword">...</span>
+            similar_users(end,k), critics{k});
+<span class="keyword">end</span>
+
+disp(<span class="string">' '</span>);
+disp(<span class="string">'Results from the book:'</span>);
+disp(<span class="string">'#1 Lisa'</span>);
+disp(<span class="string">'#2 Mick'</span>);
+disp(<span class="string">'#3 Claudia'</span>);
+disp(<span class="string">' '</span>);
+
+clear <span class="string">distances</span> <span class="string">i</span> <span class="string">idx</span> <span class="string">j</span> <span class="string">k</span> <span class="string">num_users</span> <span class="string">similar_users</span>
+</pre><pre class="codeoutput">Users who share similar tastes with Toby:
+Distance 0.7 for user Mick
+Distance 1.1 for user Lisa
+Distance 1.2 for user Jack
+Distance 1.3 for user Michael
+Distance 1.4 for user Gene
+Distance 1.4 for user Claudia
+ 
+Results from the book:
+#1 Lisa
+#2 Mick
+#3 Claudia
+ 
+</pre><h2>Finding similar movies<a name="9"></a></h2><p>We can also use optmized X to compare movies and discover which movies are related to one another based on the learned features. Again I use Euclidean distance to rank the users by similarity.</p><p>My results are very close but not exactly the same as those in the book. Your results may vary due to random initialization.</p><pre class="codeinput">similar_movies = zeros(num_movies);
+
+<span class="keyword">for</span> i=1:num_movies
+    distances = bsxfun(@minus, X, X(i,:));
+    distances = sqrt(sum(distances.^2,2));
+    similar_movies(i,:) = distances';
+<span class="keyword">end</span>
+
+<span class="comment">% What's similar to "Superman"?</span>
+[~, idx] = sort(similar_movies(4,:));
+idx = idx(2:end);
+disp(<span class="string">'Movies similar to "Superman":'</span>);
+<span class="keyword">for</span> j = 1:size(idx,2)
+    k = idx(j);
+    fprintf(<span class="string">'Distance %.1f for movie %s\n'</span>, <span class="keyword">...</span>
+            similar_movies(4,k), movies{k});
+<span class="keyword">end</span>
+
+disp(<span class="string">' '</span>);
+disp(<span class="string">'Results from the book:'</span>);
+disp(<span class="string">'#1 Dupree'</span>);
+disp(<span class="string">'#2 Lady'</span>);
+disp(<span class="string">'#3 Snakes'</span>);
+disp(<span class="string">'#4 NightListener'</span>);
+disp(<span class="string">'#5 JustMyLuck'</span>);
+disp(<span class="string">' '</span>);
+
+clear <span class="string">distances</span> <span class="string">i</span> <span class="string">idx</span> <span class="string">j</span> <span class="string">k</span> <span class="string">num_movies</span> <span class="string">similar_movies</span>
+</pre><pre class="codeoutput">Movies similar to "Superman":
+Distance 0.7 for movie Lady
+Distance 0.7 for movie Dupree
+Distance 1.0 for movie Snakes
+Distance 1.3 for movie JustMyLuck
+Distance 1.3 for movie NightListener
+ 
+Results from the book:
+#1 Dupree
+#2 Lady
+#3 Snakes
+#4 NightListener
+#5 JustMyLuck
+ 
+</pre><h2>Closing<a name="10"></a></h2><p>There is more subtlety to this approach than was discussed so far.</p><div><ul><li>Running optimization steps multiple times to get the best minimum</li><li>Selecting the number of features and lambda for regularization</li><li>Experiment with Pearson Coefficient instead of Euclidean distance</li><li>Try it with MovieLens dataset. See below for the initial setup</li></ul></div><p>It just comes down to run parameter sweep to get the best possible values.</p><h2>Using the MovieLens Dataset  - Run the learning algorithm<a name="11"></a></h2><p>You can try the MovieLens dataset included in the <a href="https://github.com/toshiakit/recommendations">earlier project</a> on the approach discussed here. Download the dataset into "ml-data_0" folder.</p><pre class="codeinput"><span class="comment">% Load data from u.data and u.item as follows:</span>
+[Y, movies, R]= loadMovieLens(<span class="string">'ml-data_0'</span>);
+
+<span class="comment">% Y, R must be (movies x users) matrices</span>
+Y = Y'; R = R';
+
+<span class="comment">% Transpose movie from a row to column vector</span>
+movies = movies';
+
+<span class="comment">% Normalize Ratings</span>
+[Ynorm, Ymean] = normalizeRatings(Y, R);
+
+<span class="comment">% Set cost function parameters</span>
+num_users = size(Ynorm, 2);
+num_movies = size(Ynorm, 1);
+num_features = 100;
+lambda = 1; <span class="comment">% regularization parameter to control over/under fitting</span>
+
+<span class="comment">% Randomly initialize Theta and X again</span>
+disp(<span class="string">'Randomly generating X and Theta again...'</span>);
+X = randn(num_movies,num_features);
+Theta = randn(num_users,num_features);
+init_params = [X(:) ; Theta(:)]; <span class="comment">% roll X and Theta into one vector</span>
+
+<span class="comment">% Set options for fminunc</span>
+options = optimset(<span class="string">'GradObj'</span>, <span class="string">'on'</span>, <span class="string">'MaxIter'</span>, 100);
+
+<span class="comment">% % Run optimization - this part takes a long processing time.</span>
+<span class="comment">% fprintf('\nRunning the solver... \n');</span>
+<span class="comment">% tStart = tic;</span>
+<span class="comment">% theta = fmincg(@(t)(cofiCostFunc(t, Ynorm, R, num_users, num_movies, ...</span>
+<span class="comment">%                 num_features, lambda)), ...</span>
+<span class="comment">%                 init_params, options);</span>
+<span class="comment">% tEnd = toc(tStart);</span>
+<span class="comment">% fprintf('%d minutes and %f seconds\n',floor(tEnd/60),rem(tEnd,60));</span>
+<span class="comment">%</span>
+<span class="comment">% % Unroll the returned theta back into X and Theta</span>
+<span class="comment">% X = reshape(theta(1:num_movies*num_features), num_movies, num_features);</span>
+<span class="comment">% Theta = reshape(theta(num_movies*num_features+1:end), ...</span>
+<span class="comment">%                 num_users, num_features);</span>
+<span class="comment">%</span>
+<span class="comment">% fprintf('Parameter learning completed.\n');</span>
+<span class="comment">%</span>
+<span class="comment">% % Calling collaborative Filtering Cost Function</span>
+<span class="comment">% init_params = [X(:) ; Theta(:)];</span>
+<span class="comment">% J = cofiCostFunc(init_params, Ynorm, R, num_users, num_movies, ...</span>
+<span class="comment">%                                   num_features, lambda);</span>
+<span class="comment">% fprintf('Cost at optimized X and Theta: %f \n', J);</span>
+<span class="comment">%</span>
+<span class="comment">% % Now that we have optimized X and Theta, we can use them to predict</span>
+<span class="comment">% % ratings and give recommendations. Using User ID = 87 example from the</span>
+<span class="comment">% % book...</span>
+<span class="comment">%</span>
+<span class="comment">% P = X * Theta';              % predicted ratings</span>
+<span class="comment">% P = bsxfun(@plus, P, Ymean); % add back the mean to restore full ratings</span>
+<span class="comment">%</span>
+<span class="comment">% % Pick User ID = 87</span>
+<span class="comment">% user87_predictions = min(P(:,87),5); % don't give more than 5 starts</span>
+<span class="comment">% [~, idx] = sort(user87_predictions, 'descend');</span>
+<span class="comment">%</span>
+<span class="comment">% fprintf('\nRecommendations for User ID = 87:\n');</span>
+<span class="comment">% for i=1:num_movies</span>
+<span class="comment">%     j = idx(i);</span>
+<span class="comment">%     if R(j,end) == 0</span>
+<span class="comment">%         fprintf('Predicted rating %.1f for movie %s\n', ...</span>
+<span class="comment">%             user87_predictions(j), movies{j});</span>
+<span class="comment">%     end</span>
+<span class="comment">% end</span>
+</pre><pre class="codeoutput">Randomly generating X and Theta again...
+</pre><p class="footer"><br>
+      Published with MATLAB&reg; 7.13<br></p></div><!--
+##### SOURCE BEGIN #####
+%% "Programming Collective Intelligence - Building Smart Web 2.0 Applications"
+% by Toby Segaran (O'Reilly Media, ISBN-10: 0-596-52932-5)
+%
+% When Stanford University initially offered two online courses which later
+% turned into Coursera and Udacity, I took Machine Learning class by Andrew
+% Ng, It was an excellent class, one of the best I ever took. 
+% 
+% The class also included a module on Collaborative Filtering, and
+% interestingly it used a very different approach from the Segaran's, and
+% it took direct advantage of matrix computational capabilities because the
+% class was taught in Octave. 
+%
+% In this example, I am using fminunc function from Optimization toolbox
+% rather than fmincg fuction that Andew Ng used. 
+
+% Initialization
+clear all; clc ; close all;
+
+%% Create the movie review dataset 
+% I will use the same example used in the original book.
+
+% There are 7 movie critics:
+% 'Lisa Rose', 'Gene Seymour', 'Michael Phillips', ...
+%    'Claudia Puig', 'Mick LaSalle', 'Jack Matthiews', 'Toby'
+critics = {'Lisa', 'Gene', 'Michael', ...
+   'Claudia', 'Mick', 'Jack', 'Toby'}';
+
+% There are 6 movies:
+% 'Lady in the Water', 'Snakes on a Plane', 'Just My Luck',...
+%    'Superman Returns', 'The Night Listener', 'You, Me and Dupree'
+movies = {'Lady', 'Snakes', 'JustMyLuck',...
+   'Superman', 'NightListener', 'Dupree'}';
+
+% Data is a matrix of ratings by those  movies (row) x critics (col)
+Y = ...
+[2.5 3.0 2.5 0   3.0 3.0 0  ; ...
+ 3.5 3.5 3.0 3.5 4.0 4.0 4.5; ...
+ 3.0 1.5 0   3.0 2.0 0   0  ; ...
+ 3.5 5.0 3.5 4.0 3.0 5.0 4.0; ...
+ 3.0 3.0 4.0 4.5 3.0 3.0 0  ; ...
+ 2.5 3.5 0   2.5 2.0 3.5 1 ];
+
+disp('Sample data has been loaded into Workspace.')
+reviews = dataset({Y,critics{:}},'ObsNames',movies)
+
+% In this dataset, the ratings range between 1 to 5 and 0 indicates no 
+% rating. I need a new matrix R which is a logical array that returns 1 
+% if a given movie is rated by a given user or 0 if not. 
+R = Y > 0;
+
+% This is needed to filter out unrated movies so that we can calculate an
+% average, for example. 
+fprintf('Average rating for ''Lady in the Water'': %.1f out of 5\n\n', ...
+    mean(Y(1, R(1, :))));
+
+clear reviews
+
+%% Recommendation as an optimization problem
+% Toby Segaran's approach in the book was to use Euclidean distance or
+% Pearson coefficient to calculate similarity scores. 
+%
+% Andrew Ng's approach turns this into an optimization problem. You need to
+% come up with a model with an arbitrary parameters to preduct a user's
+% rating for a give movie. Then compare the predicted ratings with the
+% actual ratings and tune the parameters until you minimize the prediction
+% errors. 
+% 
+%%% Predicting ratings - Content-based approach
+% Let's assume we can predict a user's rating for a movie if we know the
+% past movie ratings and relevant attributes of those movies, such as
+% romantic, action, etc. This is a linear regression: 
+% 
+% |prediction = param0*attr0 + param1*attr1 + param2*attr2...|
+%
+% where *attri0* = 1 and therefore *param0* is just a intercept term.
+%
+% This arrangement makes it possible to group all parameters into matrix
+% Theta and all attributes into matrix X. Then the lear regression is now
+% simplified as:
+%
+% |P = X*Theta'|
+% 
+% If we know the feature matrix X, then we can estimate the parameter
+% matrix Theta by choosingthe value of Theta that minimize prediction
+% errors. 
+
+% Create fake X and Theta with 3 features (attributes)
+num_features = 3;
+num_movies = size(movies,1);
+num_users = size(critics,1);
+
+% Randomly initialize Theta and X
+disp('Randomly generating X and Theta...');
+X = randn(num_movies,num_features);
+Theta = randn(num_users,num_features);
+
+% Predict ratings and show the prediction errors
+P = X*Theta';
+errors = (P-Y).*R; % filter out unrated movies
+
+disp('Prediction errors from fake X and Theta.')
+prediction_errors = dataset({errors,critics{:}},'ObsNames',movies)
+
+clear P errors num_features num_movies num_users prediction_errors X Theta
+
+%% Feature learning 
+% The problem with the previous approach is that we need to know the values
+% of X in order to estimate the values of Theta, but how do you get the
+% values of X in the first place? You need to figure out the relevant
+% attributes of the all the movies in advance. 
+%
+% You can also estimate the values of X if we know the values of Theta, but
+% that means we need to know user preferences in advance. This is a chicken
+% and egg problem. 
+%
+% The solution is to randomly initialize both X and Theta and derive
+% through optimization the values of both matrix that together minimizes
+% prediction errors. 
+
+% Normalize Ratings so that each movie has a rating of 0 on average, and 
+% returns the mean rating in Ymean.
+[Ynorm, Ymean] = normalizeRatings(Y, R);
+
+% Set cost function parameters
+num_users = size(Ynorm, 2);
+num_movies = size(Ynorm, 1);
+num_features = 3;
+lambda = 1; % regularization parameter to control over/under fitting
+
+% Randomly initialize Theta and X again
+disp('Randomly generating X and Theta again...');
+X = randn(num_movies,num_features);
+Theta = randn(num_users,num_features);
+init_params = [X(:) ; Theta(:)]; % roll X and Theta into one vector
+
+% Cost Function
+J = cofiCostFunc(init_params, Ynorm, R, num_users, num_movies, ...
+                                  num_features, lambda);
+fprintf('Cost at current X and Theta: %f \n\n', J);
+
+clear J 
+
+%% Learning the parameters - the optimization approach
+% Now that you have the cost function and initial parameters, you can feed
+% them to a minimization solver fminunc:
+
+% Set options for fminunc
+options = optimset('GradObj', 'on', 'MaxIter', 100);
+
+% Run optimization
+theta = fminunc(@(t)(cofiCostFunc(t, Ynorm, R, num_users, num_movies, ...
+                num_features, lambda)), ...
+                init_params, options);
+
+% Unroll the returned theta back into X and Theta
+X = reshape(theta(1:num_movies*num_features), num_movies, num_features);
+Theta = reshape(theta(num_movies*num_features+1:end), ...
+                num_users, num_features);
+
+disp('Parameter learning completed.');
+
+% Calling collaborative Filtering Cost Function
+init_params = [X(:) ; Theta(:)];
+J = cofiCostFunc(init_params, Ynorm, R, num_users, num_movies, ...
+                                  num_features, lambda);
+fprintf('Cost at optimized X and Theta: %f \n\n', J);
+
+clear J init_params lambda num_features options theta
+
+%% Using the learned model to make predictions
+% Now that we have optimized X and Theta, we can use them to predict
+% ratings and give recommendations. As in the book, we come to the same
+% recommendations for Toby. Your results may vary due to random 
+% initialization.
+
+P = X * Theta';              % predicted ratings
+P = bsxfun(@plus, P, Ymean); % add back the mean to restore full ratings
+
+% Toby is at the end of critics vector
+toby_predictions = min(P(:,end),5); % don't give more than 5 starts
+[~, idx] = sort(toby_predictions, 'descend');
+
+disp('Recommendations for Toby:');
+for i=1:num_movies
+    j = idx(i);
+    if R(j,end) == 0
+        fprintf('Predicted rating %.1f for movie %s\n', ...
+            toby_predictions(j), movies{j});
+    end
+end
+
+disp(' ');
+disp('Results from the book:');
+disp('#1 NightListener');
+disp('#2 Lady');
+disp('#3 JustMyLuck');
+disp(' ');
+
+clear P i idx j toby_predictions
+
+%% Finding similar users
+% We can also use optmized Theta to compare among users and discover who
+% have similar tastes to one another based on the learned preferences. In
+% this case I use Euclidean distance to rank the users by similarity.
+% 
+% My results are very close but not exactly the same as those in the book.
+% Your results may vary due to random initialization.
+
+similar_users = zeros(num_users);
+
+for i=1:num_users
+    distances = bsxfun(@minus, Theta, Theta(i,:));
+    distances = sqrt(sum(distances.^2,2));
+    similar_users(i,:) = distances';
+end
+
+% Whose tastes are similar to Toby's?
+[~, idx] = sort(similar_users(end,:));
+idx = idx(2:end);
+disp('Users who share similar tastes with Toby:');
+for j = 1:size(idx,2)
+    k = idx(j);
+    fprintf('Distance %.1f for user %s\n', ...
+            similar_users(end,k), critics{k});
+end
+
+disp(' ');
+disp('Results from the book:');
+disp('#1 Lisa');
+disp('#2 Mick');
+disp('#3 Claudia');
+disp(' ');
+
+clear distances i idx j k num_users similar_users
+
+%% Finding similar movies
+% We can also use optmized X to compare movies and discover which movies
+% are related to one another based on the learned features. Again I use 
+% Euclidean distance to rank the users by similarity.
+%
+% My results are very close but not exactly the same as those in the book.
+% Your results may vary due to random initialization.
+
+similar_movies = zeros(num_movies);
+
+for i=1:num_movies
+    distances = bsxfun(@minus, X, X(i,:));
+    distances = sqrt(sum(distances.^2,2));
+    similar_movies(i,:) = distances';
+end
+
+% What's similar to "Superman"?
+[~, idx] = sort(similar_movies(4,:));
+idx = idx(2:end);
+disp('Movies similar to "Superman":');
+for j = 1:size(idx,2)
+    k = idx(j);
+    fprintf('Distance %.1f for movie %s\n', ...
+            similar_movies(4,k), movies{k});
+end
+
+disp(' ');
+disp('Results from the book:');
+disp('#1 Dupree');
+disp('#2 Lady');
+disp('#3 Snakes');
+disp('#4 NightListener');
+disp('#5 JustMyLuck');
+disp(' ');
+
+clear distances i idx j k num_movies similar_movies
+
+%% Closing
+% There is more subtlety to this approach than was discussed so far. 
+% 
+% * Running optimization steps multiple times to get the best minimum
+% * Selecting the number of features and lambda for regularization
+% * Experiment with Pearson Coefficient instead of Euclidean distance
+% * Try it with MovieLens dataset. See below for the initial setup
+% 
+% It just comes down to run parameter sweep to get the best possible
+% values. 
+
+%% Using the MovieLens Dataset  - Run the learning algorithm 
+% You can try the MovieLens dataset included in the
+% <https://github.com/toshiakit/recommendations earlier project> on the
+% approach discussed here. Download the dataset into "ml-data_0" folder. 
+
+% Load data from u.data and u.item as follows:
+[Y, movies, R]= loadMovieLens('ml-data_0');
+
+% Y, R must be (movies x users) matrices
+Y = Y'; R = R';
+
+% Transpose movie from a row to column vector
+movies = movies';
+
+% Normalize Ratings
+[Ynorm, Ymean] = normalizeRatings(Y, R);
+
+% Set cost function parameters
+num_users = size(Ynorm, 2);
+num_movies = size(Ynorm, 1);
+num_features = 100;
+lambda = 1; % regularization parameter to control over/under fitting
+
+% Randomly initialize Theta and X again
+disp('Randomly generating X and Theta again...');
+X = randn(num_movies,num_features);
+Theta = randn(num_users,num_features);
+init_params = [X(:) ; Theta(:)]; % roll X and Theta into one vector
+
+% Set options for fminunc
+options = optimset('GradObj', 'on', 'MaxIter', 100);
+
+% % Run optimization - this part takes a long processing time.
+% fprintf('\nRunning the solver... \n');
+% tStart = tic;
+% theta = fmincg(@(t)(cofiCostFunc(t, Ynorm, R, num_users, num_movies, ...
+%                 num_features, lambda)), ...
+%                 init_params, options);
+% tEnd = toc(tStart);
+% fprintf('%d minutes and %f seconds\n',floor(tEnd/60),rem(tEnd,60));
+% 
+% % Unroll the returned theta back into X and Theta
+% X = reshape(theta(1:num_movies*num_features), num_movies, num_features);
+% Theta = reshape(theta(num_movies*num_features+1:end), ...
+%                 num_users, num_features);
+% 
+% fprintf('Parameter learning completed.\n');
+% 
+% % Calling collaborative Filtering Cost Function
+% init_params = [X(:) ; Theta(:)];
+% J = cofiCostFunc(init_params, Ynorm, R, num_users, num_movies, ...
+%                                   num_features, lambda);
+% fprintf('Cost at optimized X and Theta: %f \n', J);
+%
+% % Now that we have optimized X and Theta, we can use them to predict
+% % ratings and give recommendations. Using User ID = 87 example from the
+% % book...
+% 
+% P = X * Theta';              % predicted ratings
+% P = bsxfun(@plus, P, Ymean); % add back the mean to restore full ratings
+% 
+% % Pick User ID = 87
+% user87_predictions = min(P(:,87),5); % don't give more than 5 starts
+% [~, idx] = sort(user87_predictions, 'descend');
+% 
+% fprintf('\nRecommendations for User ID = 87:\n');
+% for i=1:num_movies
+%     j = idx(i);
+%     if R(j,end) == 0
+%         fprintf('Predicted rating %.1f for movie %s\n', ...
+%             user87_predictions(j), movies{j});
+%     end
+% end
+
+##### SOURCE END #####
+--></body></html>
